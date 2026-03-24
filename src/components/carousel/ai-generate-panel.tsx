@@ -66,7 +66,7 @@ export function AIGeneratePanel({ onGenerate }: AIGeneratePanelProps) {
     Array<ReferenceImage & { previewUrl: string }>
   >([]);
   const [isDragging, setIsDragging] = useState(false);
-  const [instagramProfiles, setInstagramProfiles] = useState<string[]>([""]);
+  const [instagramProfiles, setInstagramProfiles] = useState<string[]>(["https://www.instagram.com/gastondroz/"]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Image handling ───────────────────────────────────────────────────────

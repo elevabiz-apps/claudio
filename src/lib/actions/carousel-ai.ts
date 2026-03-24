@@ -1,16 +1,14 @@
 "use server";
 
-import {
-  isGroqConfigured,
-  groqChatComplete,
-  type GroqContentPart,
-} from "@/lib/groq/client";
+import { isGroqConfigured, groqChatComplete, type GroqContentPart } from "@/lib/groq/client";
+import { isAnthropicConfigured, getAnthropicClient } from "@/lib/anthropic/client";
 import type { CarouselSlide, CarouselElement } from "@/lib/actions/carousel";
+import type Anthropic from "@anthropic-ai/sdk";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export interface ReferenceImage {
-  data: string; // base64 (without data:... prefix)
+  data: string; // base64 without the data:...;base64, prefix
   mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
   name: string;
 }
@@ -29,6 +27,8 @@ export interface AIGenerateResult {
 }
 
 interface AISlide {
+  layoutType?: "hero" | "content" | "stat" | "quote" | "cta";
+  badge?: string;
   title: string;
   subtitle?: string;
   body?: string;
@@ -39,234 +39,343 @@ interface AISlide {
   gradientTo?: string;
   gradientDirection?: "to bottom" | "to right" | "to bottom right";
   textColor: string;
+  accentColor?: string;
+  titleAlign?: "left" | "center" | "right";
+  titleY?: number;
+  subtitleY?: number;
+  bodyY?: number;
+  titleFontSize?: number;
+  subtitleFontSize?: number;
 }
 
 interface AIResponse {
   title: string;
+  colorPalette?: {
+    background: string;
+    textPrimary: string;
+    textSecondary: string;
+    accent: string;
+  };
   slides: AISlide[];
 }
 
-// ── Prompt ─────────────────────────────────────────────────────────────────
+// ── Default brand palette (@gastondroz) ────────────────────────────────────
+
+const DEFAULT_PALETTE = {
+  background: "#0C1014",
+  textPrimary: "#FFFFFF",
+  textSecondary: "#94A3B8",
+  accent: "#00D4B0",
+};
+
+// ── System prompt ──────────────────────────────────────────────────────────
+
+const SYSTEM_PROMPT = `You are an elite Instagram carousel designer working for high-converting coaches, consultants and educators.
+
+DEFAULT BRAND REFERENCE — @gastondroz (Gastón | Marketing para nutricionistas):
+• Background: Very dark navy #0C1014 (gradients: #0C1014 → #0f2133 or #0C1014 → #1a2a1f)
+• Accent / highlight color: Mint turquoise #00D4B0
+• Primary text: White #FFFFFF
+• Secondary text: Slate #94A3B8
+• Typography: Bold impactful headlines, clean light subtitles, high contrast
+• Tone: Direct, confident, data-driven, Argentine Spanish
+• Content style: Educational frameworks, numbered lists, strong CTAs, results-focused
+
+DESIGN PRINCIPLES:
+1. One dominant idea per slide — no clutter
+2. Strong typographic hierarchy: title much bigger than subtitle
+3. Vary alignment: hero slides centered, content slides left-aligned (x:28%, align:left) for premium editorial feel
+4. Badge labels ("01", "02", "→", "✓") add structure and professionalism — use them on content slides
+5. Font sizes: hero titles 42-48px · content titles 34-40px · subtitles 18-22px · body 13-15px
+6. Slide 1: scroll-stopping hook with curiosity gap or bold claim
+7. Middle slides: one key insight each, numbered with badge
+8. Last slide: clear direct CTA — what to do RIGHT NOW
+9. Contrast is non-negotiable: white text on dark, dark text on light
+
+LAYOUT POSITION GUIDE:
+• Hero (centered): titleY:42, no badge
+• Content left-aligned: badge at titleY-14, title at titleY:32, subtitle at subtitleY:54
+• Quote (centered): title at titleY:40, subtitle at subtitleY:62
+• CTA: title at titleY:35, subtitle at subtitleY:56, ctaText below
+
+Respond ONLY with valid JSON. Absolutely no markdown, no explanation text.`;
+
+// ── Main prompt ────────────────────────────────────────────────────────────
 
 function buildPrompt(input: AIGenerateInput): string {
   const count = input.slideCount ?? 4;
   const hasImages = (input.referenceImages?.length ?? 0) > 0;
   const hasProfiles = (input.instagramProfiles?.length ?? 0) > 0;
 
-  let contextSection = "";
-
+  let context = "";
   if (hasImages) {
-    contextSection += `
-VISUAL REFERENCES (images provided above):
-Carefully analyze the reference images provided. Extract and replicate:
-- Color palette: dominant colors, accent colors, background tones
-- Typography style: font weight, sizing hierarchy, text density
-- Overall aesthetic: minimalist, bold, editorial, playful, luxury, etc.
-- Layout patterns: how elements are arranged and spaced
-- Mood and tone: the emotional feel of the visual style
-The carousel MUST match this visual identity closely.
-`;
+    context += `\nVISUAL REFERENCES: Analyze the ${input.referenceImages!.length} reference image(s) above. Extract exact colors, typography weight, aesthetic mood. Override default brand colors with what you see.\n`;
   }
-
   if (hasProfiles) {
-    contextSection += `
-INSTAGRAM PROFILE REFERENCES:
-${input.instagramProfiles!.map((p, i) => `${i + 1}. ${p}`).join("\n")}
-These are Instagram profiles to use as context for:
-- Brand voice and tone of copywriting
-- Communication style (formal/casual, inspirational/educational, etc.)
-- Content structure and messaging patterns
-- Target audience and how they speak to them
-Align the carousel text and tone with this brand identity.
-`;
+    context += `\nADDITIONAL INSTAGRAM REFERENCES (adapt copy voice and tone to match):\n${input.instagramProfiles!.map((p, i) => `${i + 1}. ${p}`).join("\n")}\n`;
   }
 
-  return `You are a professional social media designer specializing in Instagram carousel posts.
-${hasImages || hasProfiles ? `\nIMPORTANT CONTEXT:\n${contextSection}` : ""}
-Create a ${count}-slide Instagram carousel design for the following idea:
-
+  return `${context}
+Create a premium ${count}-slide Instagram carousel for this topic:
 "${input.prompt}"
 
-${hasImages ? "Use the colors, aesthetic, and visual style from the reference images as your primary design guide." : ""}
-${hasProfiles ? "Match the tone, voice, and communication style of the referenced Instagram profiles." : ""}
+Slide structure:
+• Slide 1 — HERO: Hook that stops the scroll. Big bold claim or curiosity gap. No badge.
+• Slides 2–${count - 1} — CONTENT: One insight per slide. Numbered badges (01, 02…). Left-aligned for premium feel.
+• Slide ${count} — CTA: Strong direct action. What should the reader do right now?
 
-Respond ONLY with a valid JSON object (no markdown, no extra explanation) in this exact format:
+Return this exact JSON (all fields shown, omit only truly optional ones):
 {
-  "title": "short name for the carousel design",
+  "title": "internal design name",
+  "colorPalette": {
+    "background": "#hex",
+    "textPrimary": "#hex",
+    "textSecondary": "#hex",
+    "accent": "#hex"
+  },
   "slides": [
     {
-      "title": "Main headline text (max 8 words)",
-      "subtitle": "Supporting text or key point (max 15 words, optional)",
-      "body": "Extra detail if needed (max 20 words, optional)",
-      "ctaText": "Call to action text for last slide only (optional)",
-      "backgroundColor": "#hexcolor",
-      "backgroundType": "solid" or "gradient",
-      "gradientFrom": "#hexcolor (only if gradient)",
-      "gradientTo": "#hexcolor (only if gradient)",
-      "gradientDirection": "to bottom" or "to right" or "to bottom right",
-      "textColor": "#hexcolor (must contrast well with background)"
+      "layoutType": "hero",
+      "badge": null,
+      "title": "Bold hook headline (max 7 words)",
+      "subtitle": "Supporting line (max 14 words)",
+      "body": null,
+      "ctaText": null,
+      "backgroundColor": "#hex",
+      "backgroundType": "gradient",
+      "gradientFrom": "#hex",
+      "gradientTo": "#hex",
+      "gradientDirection": "to bottom",
+      "textColor": "#FFFFFF",
+      "accentColor": "#00D4B0",
+      "titleAlign": "center",
+      "titleY": 42,
+      "subtitleY": 60,
+      "titleFontSize": 44,
+      "subtitleFontSize": 20
+    },
+    {
+      "layoutType": "content",
+      "badge": "01",
+      "title": "Key insight headline",
+      "subtitle": "One-sentence explanation",
+      "body": null,
+      "ctaText": null,
+      "backgroundColor": "#hex",
+      "backgroundType": "solid",
+      "gradientFrom": null,
+      "gradientTo": null,
+      "gradientDirection": null,
+      "textColor": "#FFFFFF",
+      "accentColor": "#00D4B0",
+      "titleAlign": "left",
+      "titleY": 32,
+      "subtitleY": 54,
+      "titleFontSize": 36,
+      "subtitleFontSize": 19
     }
   ]
 }
 
-Design guidelines:
-- Use a consistent color palette across all slides${hasImages ? " — extracted from the reference images" : ""}
-- First slide: hook/attention-grabbing headline
-- Middle slides: value/content/key points
-- Last slide: CTA (call to action)
-- Text must be readable — ensure high contrast between textColor and background
-- Keep text short and impactful
-- Use gradients for visual interest when appropriate`;
+RULES:
+- textColor MUST contrast on backgroundColor (white on dark, dark on light)
+- All hex colors must be valid 6-digit hex codes
+- Vary titleAlign: hero→center, content→left, cta→center
+- Badge for content slides: "01", "02", etc. Null for hero and cta
+- ctaText only on the last CTA slide`;
 }
 
-// ── AI Slide → CarouselSlide transformer ──────────────────────────────────
+// ── AI Slide → CarouselSlide ───────────────────────────────────────────────
 
-function aiSlideToCarouselSlide(aiSlide: AISlide): CarouselSlide {
+function aiSlideToCarouselSlide(slide: AISlide, palette: AIResponse["colorPalette"]): CarouselSlide {
+  const pal = palette ?? DEFAULT_PALETTE;
   const elements: CarouselElement[] = [];
 
-  if (aiSlide.title) {
-    elements.push({
-      id: crypto.randomUUID(),
-      type: "text",
-      text: aiSlide.title,
-      color: aiSlide.textColor,
-      fontSize: 36,
-      fontWeight: "bold",
-      x: 50,
-      y: aiSlide.subtitle ? 35 : 50,
-      align: "center",
-    });
-  }
+  const align = slide.titleAlign ?? "center";
+  const x = align === "left" ? 28 : align === "right" ? 72 : 50;
+  const accent = slide.accentColor ?? pal.accent;
+  const textColor = slide.textColor ?? pal.textPrimary;
 
-  if (aiSlide.subtitle) {
-    elements.push({
-      id: crypto.randomUUID(),
-      type: "subtitle",
-      text: aiSlide.subtitle,
-      color: aiSlide.textColor,
-      fontSize: 20,
-      fontWeight: "normal",
-      x: 50,
-      y: aiSlide.title ? 55 : 50,
-      align: "center",
-    });
-  }
-
-  if (aiSlide.body) {
+  // Badge (slide number / icon label)
+  if (slide.badge) {
     elements.push({
       id: crypto.randomUUID(),
       type: "body",
-      text: aiSlide.body,
-      color: aiSlide.textColor,
-      fontSize: 14,
-      fontWeight: "normal",
-      x: 50,
-      y: 72,
-      align: "center",
+      text: slide.badge,
+      color: accent,
+      fontSize: 13,
+      fontWeight: "bold",
+      x,
+      y: (slide.titleY ?? 32) - 13,
+      align,
     });
   }
 
-  if (aiSlide.ctaText) {
+  // Title
+  if (slide.title) {
+    elements.push({
+      id: crypto.randomUUID(),
+      type: "text",
+      text: slide.title,
+      color: textColor,
+      fontSize: slide.titleFontSize ?? (slide.layoutType === "hero" ? 42 : 36),
+      fontWeight: "bold",
+      x,
+      y: slide.titleY ?? (slide.subtitle ? 35 : 46),
+      align,
+    });
+  }
+
+  // Subtitle
+  if (slide.subtitle) {
     elements.push({
       id: crypto.randomUUID(),
       type: "subtitle",
-      text: `→ ${aiSlide.ctaText}`,
-      color: aiSlide.textColor,
+      text: slide.subtitle,
+      color: slide.layoutType === "content" ? pal.textSecondary : textColor,
+      fontSize: slide.subtitleFontSize ?? 19,
+      fontWeight: "normal",
+      x,
+      y: slide.subtitleY ?? 57,
+      align,
+    });
+  }
+
+  // Body
+  if (slide.body) {
+    elements.push({
+      id: crypto.randomUUID(),
+      type: "body",
+      text: slide.body,
+      color: pal.textSecondary,
+      fontSize: 14,
+      fontWeight: "normal",
+      x,
+      y: (slide.subtitleY ?? 57) + 16,
+      align,
+    });
+  }
+
+  // CTA text
+  if (slide.ctaText) {
+    elements.push({
+      id: crypto.randomUUID(),
+      type: "subtitle",
+      text: `→ ${slide.ctaText}`,
+      color: accent,
       fontSize: 18,
       fontWeight: "bold",
       x: 50,
-      y: 82,
+      y: (slide.subtitleY ?? 57) + 18,
       align: "center",
     });
   }
 
   return {
     id: crypto.randomUUID(),
-    backgroundType: aiSlide.backgroundType ?? "solid",
-    backgroundColor: aiSlide.backgroundColor ?? "#0f0f0f",
-    gradientFrom: aiSlide.gradientFrom ?? aiSlide.backgroundColor ?? "#0f0f0f",
-    gradientTo: aiSlide.gradientTo ?? aiSlide.backgroundColor ?? "#0f0f0f",
-    gradientDirection: aiSlide.gradientDirection ?? "to bottom",
+    backgroundType: slide.backgroundType ?? "solid",
+    backgroundColor: slide.backgroundColor ?? pal.background,
+    gradientFrom: slide.gradientFrom ?? slide.backgroundColor ?? pal.background,
+    gradientTo: slide.gradientTo ?? slide.backgroundColor ?? pal.background,
+    gradientDirection: slide.gradientDirection ?? "to bottom",
     elements,
   };
 }
 
-// ── Build message content ──────────────────────────────────────────────────
+// ── JSON parser ────────────────────────────────────────────────────────────
 
-function buildMessageContent(input: AIGenerateInput): GroqContentPart[] {
-  const content: GroqContentPart[] = [];
-  const hasImages = (input.referenceImages?.length ?? 0) > 0;
-
-  if (hasImages) {
-    content.push({
-      type: "text",
-      text: `I'm providing ${input.referenceImages!.length} reference image(s) below. Analyze their visual style, color palette, typography, and aesthetic carefully — you will replicate this style in the carousel design.`,
-    });
-
-    for (const img of input.referenceImages!) {
-      content.push({
-        type: "image_url",
-        image_url: {
-          url: `data:${img.mediaType};base64,${img.data}`,
-        },
-      });
-    }
+function parseAIJson(raw: string): AIResponse | null {
+  const match = raw.match(/```(?:json)?\s*([\s\S]*?)```/) ?? raw.match(/(\{[\s\S]*\})/);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[1]!);
+  } catch {
+    return null;
   }
-
-  content.push({ type: "text", text: buildPrompt(input) });
-
-  return content;
 }
 
-// ── Server Action ──────────────────────────────────────────────────────────
+// ── Groq generation ────────────────────────────────────────────────────────
 
-export async function generateCarouselWithAI(
-  input: AIGenerateInput
-): Promise<AIGenerateResult> {
-  if (!isGroqConfigured()) {
-    return {
-      slides: [],
-      title: "",
-      error: "GROQ_API_KEY not configured. Add it to your environment variables.",
-    };
-  }
-
+async function generateWithGroq(input: AIGenerateInput): Promise<AIGenerateResult> {
   const hasImages = (input.referenceImages?.length ?? 0) > 0;
-  // Use vision model when images are present, otherwise use the faster text model
   const model = hasImages
     ? "meta-llama/llama-4-scout-17b-16e-instruct"
     : "llama-3.3-70b-versatile";
 
-  try {
-    const content = buildMessageContent(input);
+  const userContent: GroqContentPart[] = [];
 
-    // Groq expects content as string for text-only, array for multimodal
-    const messageContent =
-      content.length === 1 && content[0].type === "text"
-        ? content[0].text!
-        : content;
-
-    const rawText = await groqChatComplete(
-      [{ role: "user", content: messageContent as string }],
-      model,
-      2048
-    );
-
-    // Extract JSON — model might wrap it in ```json ... ```
-    const jsonMatch =
-      rawText.match(/```(?:json)?\s*([\s\S]*?)```/) ??
-      rawText.match(/(\{[\s\S]*\})/);
-
-    if (!jsonMatch) {
-      return { slides: [], title: "", error: "Could not parse AI response." };
+  if (hasImages) {
+    userContent.push({ type: "text", text: `Analyze these ${input.referenceImages!.length} visual reference(s) for style and colors:` });
+    for (const img of input.referenceImages!) {
+      userContent.push({ type: "image_url", image_url: { url: `data:${img.mediaType};base64,${img.data}` } });
     }
+  }
 
-    const parsed: AIResponse = JSON.parse(jsonMatch[1]!);
-    const slides = parsed.slides.map(aiSlideToCarouselSlide);
+  userContent.push({ type: "text", text: buildPrompt(input) });
 
-    return { slides, title: parsed.title ?? "AI Carousel" };
+  const raw = await groqChatComplete(
+    [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: hasImages ? userContent : buildPrompt(input) },
+    ],
+    model,
+    2048
+  );
+
+  const parsed = parseAIJson(raw);
+  if (!parsed) return { slides: [], title: "", error: "Could not parse AI response." };
+
+  return {
+    slides: parsed.slides.map((s) => aiSlideToCarouselSlide(s, parsed.colorPalette)),
+    title: parsed.title ?? "AI Carousel",
+  };
+}
+
+// ── Anthropic fallback ─────────────────────────────────────────────────────
+
+async function generateWithAnthropic(input: AIGenerateInput): Promise<AIGenerateResult> {
+  const client = getAnthropicClient()!;
+  const hasImages = (input.referenceImages?.length ?? 0) > 0;
+  const content: Anthropic.ContentBlockParam[] = [];
+
+  if (hasImages) {
+    content.push({ type: "text", text: `Analyze these ${input.referenceImages!.length} reference image(s):` });
+    for (const img of input.referenceImages!) {
+      content.push({ type: "image", source: { type: "base64", media_type: img.mediaType, data: img.data } });
+    }
+  }
+  content.push({ type: "text", text: buildPrompt(input) });
+
+  const message = await client.messages.create({
+    model: "claude-opus-4-6",
+    max_tokens: 2048,
+    system: SYSTEM_PROMPT,
+    messages: [{ role: "user", content }],
+  });
+
+  const raw = message.content
+    .filter((b) => b.type === "text")
+    .map((b) => (b as { type: "text"; text: string }).text)
+    .join("");
+
+  const parsed = parseAIJson(raw);
+  if (!parsed) return { slides: [], title: "", error: "Could not parse AI response." };
+
+  return {
+    slides: parsed.slides.map((s) => aiSlideToCarouselSlide(s, parsed.colorPalette)),
+    title: parsed.title ?? "AI Carousel",
+  };
+}
+
+// ── Server Action ──────────────────────────────────────────────────────────
+
+export async function generateCarouselWithAI(input: AIGenerateInput): Promise<AIGenerateResult> {
+  try {
+    if (isGroqConfigured()) return await generateWithGroq(input);
+    if (isAnthropicConfigured()) return await generateWithAnthropic(input);
+    return { slides: [], title: "", error: "No AI key configured. Add GROQ_API_KEY or ANTHROPIC_API_KEY to .env.local." };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return { slides: [], title: "", error: `AI generation failed: ${message}` };
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    return { slides: [], title: "", error: `AI generation failed: ${msg}` };
   }
 }
