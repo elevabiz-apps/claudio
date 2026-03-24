@@ -86,17 +86,17 @@ DESIGN PRINCIPLES:
 2. Strong typographic hierarchy: title much bigger than subtitle
 3. Vary alignment: hero slides centered, content slides left-aligned (x:28%, align:left) for premium editorial feel
 4. Badge labels ("01", "02", "→", "✓") add structure and professionalism — use them on content slides
-5. Font sizes: hero titles 42-48px · content titles 34-40px · subtitles 18-22px · body 13-15px
-6. Slide 1: scroll-stopping hook with curiosity gap or bold claim
-7. Middle slides: one key insight each, numbered with badge
+5. Font sizes (calibrated for 480px canvas): hero titles 28-32px · content titles 24-28px · subtitles 13-15px · body 11-12px · badge 10px
+6. Slide 1: scroll-stopping hook with curiosity gap or bold claim — MAX 4 WORDS for title
+7. Middle slides: one key insight each, numbered with badge — MAX 5 WORDS title, MAX 8 WORDS subtitle
 8. Last slide: clear direct CTA — what to do RIGHT NOW
 9. Contrast is non-negotiable: white text on dark, dark text on light
 
 LAYOUT POSITION GUIDE:
-• Hero (centered): titleY:42, no badge
-• Content left-aligned: badge at titleY-14, title at titleY:32, subtitle at subtitleY:54
-• Quote (centered): title at titleY:40, subtitle at subtitleY:62
-• CTA: title at titleY:35, subtitle at subtitleY:56, ctaText below
+• Hero (centered): titleY:40, subtitleY:60, no badge
+• Content left-aligned: badge at (titleY-12), title at titleY:30, subtitle at subtitleY:52
+• Quote (centered): title at titleY:38, subtitle at subtitleY:58
+• CTA: title at titleY:35, subtitle at subtitleY:55, ctaText at 72
 
 Respond ONLY with valid JSON. Absolutely no markdown, no explanation text.`;
 
@@ -137,31 +137,31 @@ Return this exact JSON (all fields shown, omit only truly optional ones):
     {
       "layoutType": "hero",
       "badge": null,
-      "title": "Bold hook headline (max 7 words)",
-      "subtitle": "Supporting line (max 14 words)",
+      "title": "Max 4 words here",
+      "subtitle": "Max 8 words supporting line",
       "body": null,
       "ctaText": null,
-      "backgroundColor": "#hex",
+      "backgroundColor": "#0C1014",
       "backgroundType": "gradient",
-      "gradientFrom": "#hex",
-      "gradientTo": "#hex",
+      "gradientFrom": "#0C1014",
+      "gradientTo": "#0f2133",
       "gradientDirection": "to bottom",
       "textColor": "#FFFFFF",
       "accentColor": "#00D4B0",
       "titleAlign": "center",
-      "titleY": 42,
+      "titleY": 40,
       "subtitleY": 60,
-      "titleFontSize": 44,
-      "subtitleFontSize": 20
+      "titleFontSize": 30,
+      "subtitleFontSize": 14
     },
     {
       "layoutType": "content",
       "badge": "01",
-      "title": "Key insight headline",
-      "subtitle": "One-sentence explanation",
+      "title": "Max 5 words title",
+      "subtitle": "Max 8 words subtitle here",
       "body": null,
       "ctaText": null,
-      "backgroundColor": "#hex",
+      "backgroundColor": "#0C1014",
       "backgroundType": "solid",
       "gradientFrom": null,
       "gradientTo": null,
@@ -169,15 +169,19 @@ Return this exact JSON (all fields shown, omit only truly optional ones):
       "textColor": "#FFFFFF",
       "accentColor": "#00D4B0",
       "titleAlign": "left",
-      "titleY": 32,
-      "subtitleY": 54,
-      "titleFontSize": 36,
-      "subtitleFontSize": 19
+      "titleY": 30,
+      "subtitleY": 50,
+      "titleFontSize": 26,
+      "subtitleFontSize": 14
     }
   ]
 }
 
-RULES:
+CRITICAL RULES:
+- titleFontSize: hero=28-32px, content=24-28px, cta=26-30px. NEVER above 34px.
+- subtitleFontSize: always 13-15px. NEVER above 16px.
+- title word count: hero MAX 4 words, content MAX 5 words
+- subtitle word count: MAX 8 words
 - textColor MUST contrast on backgroundColor (white on dark, dark on light)
 - All hex colors must be valid 6-digit hex codes
 - Vary titleAlign: hero→center, content→left, cta→center
@@ -203,10 +207,10 @@ function aiSlideToCarouselSlide(slide: AISlide, palette: AIResponse["colorPalett
       type: "body",
       text: slide.badge,
       color: accent,
-      fontSize: 13,
+      fontSize: 10,
       fontWeight: "bold",
       x,
-      y: (slide.titleY ?? 32) - 13,
+      y: (slide.titleY ?? 30) - 11,
       align,
     });
   }
@@ -218,7 +222,7 @@ function aiSlideToCarouselSlide(slide: AISlide, palette: AIResponse["colorPalett
       type: "text",
       text: slide.title,
       color: textColor,
-      fontSize: slide.titleFontSize ?? (slide.layoutType === "hero" ? 42 : 36),
+      fontSize: slide.titleFontSize ?? (slide.layoutType === "hero" ? 30 : 26),
       fontWeight: "bold",
       x,
       y: slide.titleY ?? (slide.subtitle ? 35 : 46),
@@ -233,7 +237,7 @@ function aiSlideToCarouselSlide(slide: AISlide, palette: AIResponse["colorPalett
       type: "subtitle",
       text: slide.subtitle,
       color: slide.layoutType === "content" ? pal.textSecondary : textColor,
-      fontSize: slide.subtitleFontSize ?? 19,
+      fontSize: slide.subtitleFontSize ?? 14,
       fontWeight: "normal",
       x,
       y: slide.subtitleY ?? 57,

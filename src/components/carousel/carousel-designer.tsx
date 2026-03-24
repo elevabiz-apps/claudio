@@ -566,8 +566,11 @@ export function CarouselDesigner({ initialDesign }: CarouselDesignerProps) {
                   color: el.color,
                   fontSize: `${el.fontSize}px`,
                   fontWeight: el.fontWeight,
+                  fontFamily: '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif',
+                  lineHeight: el.type === "text" ? 1.1 : 1.35,
+                  letterSpacing: el.type === "text" ? "-0.02em" : "0",
                   textAlign: el.align,
-                  maxWidth: "80%",
+                  maxWidth: "84%",
                   whiteSpace: "pre-wrap",
                   wordBreak: "break-word",
                 }}
