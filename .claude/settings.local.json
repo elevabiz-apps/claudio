@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx shadcn@latest init -d)"
+      "Bash(npx shadcn@latest init -d)",
+      "Bash(npx shadcn@latest add sidebar-provider sidebar sidebar-menu-button sidebar-menu-item separator tooltip avatar badge card --yes)",
+      "Bash(npx shadcn@latest add sidebar separator tooltip avatar badge card --yes)",
+      "Bash(npm run:*)",
+      "WebSearch"
     ]
   }
 }
