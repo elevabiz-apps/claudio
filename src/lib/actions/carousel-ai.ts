@@ -1,8 +1,11 @@
 "use server";
 
-import { getAnthropicClient, isAnthropicConfigured } from "@/lib/anthropic/client";
+import {
+  isGroqConfigured,
+  groqChatComplete,
+  type GroqContentPart,
+} from "@/lib/groq/client";
 import type { CarouselSlide, CarouselElement } from "@/lib/actions/carousel";
-import type Anthropic from "@anthropic-ai/sdk";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -188,37 +191,29 @@ function aiSlideToCarouselSlide(aiSlide: AISlide): CarouselSlide {
   };
 }
 
-// ── Build multimodal message content ──────────────────────────────────────
+// ── Build message content ──────────────────────────────────────────────────
 
-function buildMessageContent(
-  input: AIGenerateInput
-): Anthropic.MessageParam["content"] {
-  const content: Anthropic.ContentBlockParam[] = [];
+function buildMessageContent(input: AIGenerateInput): GroqContentPart[] {
+  const content: GroqContentPart[] = [];
+  const hasImages = (input.referenceImages?.length ?? 0) > 0;
 
-  // Add reference images first (Claude sees them before the prompt)
-  if (input.referenceImages && input.referenceImages.length > 0) {
+  if (hasImages) {
     content.push({
       type: "text",
-      text: `I'm providing ${input.referenceImages.length} reference image(s) below. Analyze their visual style, color palette, typography, and aesthetic carefully — you will replicate this style in the carousel design.`,
+      text: `I'm providing ${input.referenceImages!.length} reference image(s) below. Analyze their visual style, color palette, typography, and aesthetic carefully — you will replicate this style in the carousel design.`,
     });
 
-    for (const img of input.referenceImages) {
+    for (const img of input.referenceImages!) {
       content.push({
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: img.mediaType,
-          data: img.data,
+        type: "image_url",
+        image_url: {
+          url: `data:${img.mediaType};base64,${img.data}`,
         },
       });
     }
   }
 
-  // Add text prompt
-  content.push({
-    type: "text",
-    text: buildPrompt(input),
-  });
+  content.push({ type: "text", text: buildPrompt(input) });
 
   return content;
 }
@@ -228,35 +223,36 @@ function buildMessageContent(
 export async function generateCarouselWithAI(
   input: AIGenerateInput
 ): Promise<AIGenerateResult> {
-  if (!isAnthropicConfigured()) {
+  if (!isGroqConfigured()) {
     return {
       slides: [],
       title: "",
-      error:
-        "ANTHROPIC_API_KEY not configured. Add it to .env.local to use AI generation.",
+      error: "GROQ_API_KEY not configured. Add it to your environment variables.",
     };
   }
 
-  const client = getAnthropicClient()!;
+  const hasImages = (input.referenceImages?.length ?? 0) > 0;
+  // Use vision model when images are present, otherwise use the faster text model
+  const model = hasImages
+    ? "meta-llama/llama-4-scout-17b-16e-instruct"
+    : "llama-3.3-70b-versatile";
 
   try {
-    const message = await client.messages.create({
-      model: "claude-opus-4-6",
-      max_tokens: 2048,
-      messages: [
-        {
-          role: "user",
-          content: buildMessageContent(input),
-        },
-      ],
-    });
+    const content = buildMessageContent(input);
 
-    const rawText = message.content
-      .filter((block) => block.type === "text")
-      .map((block) => (block as { type: "text"; text: string }).text)
-      .join("");
+    // Groq expects content as string for text-only, array for multimodal
+    const messageContent =
+      content.length === 1 && content[0].type === "text"
+        ? content[0].text!
+        : content;
 
-    // Extract JSON — Claude might wrap it in ```json ... ```
+    const rawText = await groqChatComplete(
+      [{ role: "user", content: messageContent as string }],
+      model,
+      2048
+    );
+
+    // Extract JSON — model might wrap it in ```json ... ```
     const jsonMatch =
       rawText.match(/```(?:json)?\s*([\s\S]*?)```/) ??
       rawText.match(/(\{[\s\S]*\})/);
