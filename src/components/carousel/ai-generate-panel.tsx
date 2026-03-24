@@ -247,7 +247,7 @@ export function AIGeneratePanel({ onGenerate }: AIGeneratePanelProps) {
         </Button>
 
         <p className="text-[10px] text-muted-foreground text-center">
-          Requiere <code className="font-mono">ANTHROPIC_API_KEY</code> en .env.local
+          Requiere <code className="font-mono">GROQ_API_KEY</code> en variables de entorno
         </p>
       </div>
 
