@@ -19,6 +19,8 @@ import {
   AlignCenter,
   AlignRight,
   Copy,
+  Sparkles,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -33,6 +35,7 @@ import {
 } from "@/components/ui/select";
 import { saveCarouselDesign } from "@/lib/actions/carousel";
 import type { CarouselSlide, CarouselElement, CarouselDesign } from "@/lib/actions/carousel";
+import { AIGeneratePanel } from "@/components/carousel/ai-generate-panel";
 
 // ── Templates ──────────────────────────────────────────────────────────────
 
@@ -188,6 +191,7 @@ export function CarouselDesigner({ initialDesign }: CarouselDesignerProps) {
   const [activeSlideIndex, setActiveSlideIndex] = useState(0);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [showAI, setShowAI] = useState(false);
   const [, startTransition] = useTransition();
 
   const slideRef = useRef<HTMLDivElement>(null);
@@ -422,6 +426,16 @@ export function CarouselDesigner({ initialDesign }: CarouselDesignerProps) {
     });
   }
 
+  // ── AI Generate ──────────────────────────────────────────────────────────
+
+  function handleAIGenerate(newSlides: CarouselSlide[], newTitle: string) {
+    setSlides(newSlides);
+    setTitle(newTitle);
+    setActiveSlideIndex(0);
+    setSelectedElementId(null);
+    setShowAI(false);
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -438,6 +452,16 @@ export function CarouselDesigner({ initialDesign }: CarouselDesignerProps) {
           <Badge variant="secondary">{slides.length} slide{slides.length !== 1 ? "s" : ""}</Badge>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowAI((v) => !v)}
+            className="gap-1.5 text-purple-400 border-purple-500/30 hover:bg-purple-500/10"
+          >
+            <Sparkles className="h-4 w-4" />
+            AI Generate
+            <ChevronDown className={`h-3 w-3 transition-transform ${showAI ? "rotate-180" : ""}`} />
+          </Button>
           <Button variant="outline" size="sm" onClick={handleExport}>
             <Download className="h-4 w-4" />
             Export PNG
@@ -452,6 +476,13 @@ export function CarouselDesigner({ initialDesign }: CarouselDesignerProps) {
           </Button>
         </div>
       </div>
+
+      {/* AI panel — collapsible */}
+      {showAI && (
+        <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-4">
+          <AIGeneratePanel onGenerate={handleAIGenerate} />
+        </div>
+      )}
 
       <div className="flex gap-4 flex-1 min-h-0">
         {/* Left: slide thumbnails */}
