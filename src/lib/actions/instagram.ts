@@ -2,12 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase/server";
+import type { Database } from "@/lib/supabase/types";
 import type { InstagramPost, PostStatus } from "@/lib/instagram-data";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function rowToPost(row: any): InstagramPost {
+type InstagramPostRow = Database["public"]["Tables"]["instagram_posts"]["Row"];
+
+function rowToPost(row: InstagramPostRow): InstagramPost {
   return {
     id: row.id,
     caption: row.caption,
@@ -15,7 +17,7 @@ function rowToPost(row: any): InstagramPost {
     status: row.status,
     scheduledDate: row.scheduled_date ?? undefined,
     publishedDate: row.published_date ?? undefined,
-    createdAt: (row.created_at as string).split("T")[0],
+    createdAt: row.created_at.split("T")[0],
     tags: row.tags ?? [],
   };
 }
@@ -85,6 +87,11 @@ export async function updateInstagramPostStatus(
   status: PostStatus
 ): Promise<void> {
   const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
   const extra =
     status === "published"
       ? { published_date: new Date().toISOString().split("T")[0] }
@@ -93,7 +100,8 @@ export async function updateInstagramPostStatus(
   const { error } = await supabase
     .from("instagram_posts")
     .update({ status, ...extra })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", user.id);
 
   if (error) console.error("updateInstagramPostStatus error:", error.message);
   revalidatePath("/instagram");
@@ -101,10 +109,16 @@ export async function updateInstagramPostStatus(
 
 export async function deleteInstagramPost(id: string): Promise<void> {
   const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
   const { error } = await supabase
     .from("instagram_posts")
     .delete()
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", user.id);
 
   if (error) console.error("deleteInstagramPost error:", error.message);
   revalidatePath("/instagram");

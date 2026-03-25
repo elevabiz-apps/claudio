@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useRef, useCallback } from "react";
+import { useState, useTransition, useRef, useEffect } from "react";
 import {
   Sparkles,
   RefreshCw,
@@ -65,9 +65,20 @@ export function AIGeneratePanel({ onGenerate }: AIGeneratePanelProps) {
   const [referenceImages, setReferenceImages] = useState<
     Array<ReferenceImage & { previewUrl: string }>
   >([]);
+  const referenceImagesRef = useRef<Array<ReferenceImage & { previewUrl: string }>>([]);
   const [isDragging, setIsDragging] = useState(false);
-  const [instagramProfiles, setInstagramProfiles] = useState<string[]>(["https://www.instagram.com/gastondroz/"]);
+  const [instagramProfiles, setInstagramProfiles] = useState<string[]>([""]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Keep ref in sync with state so the unmount cleanup can access current images
+  referenceImagesRef.current = referenceImages;
+
+  // Revoke all object URLs when the component unmounts to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      referenceImagesRef.current.forEach((img) => URL.revokeObjectURL(img.previewUrl));
+    };
+  }, []);
 
   // ── Image handling ───────────────────────────────────────────────────────
 
@@ -95,15 +106,11 @@ export function AIGeneratePanel({ onGenerate }: AIGeneratePanelProps) {
     });
   }
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragging(false);
-      addFiles(e.dataTransfer.files);
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [referenceImages.length]
-  );
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(false);
+    addFiles(e.dataTransfer.files);
+  }
 
   // ── Instagram profiles handling ──────────────────────────────────────────
 

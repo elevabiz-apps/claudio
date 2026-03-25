@@ -36,7 +36,7 @@ async function fetchSingleFeed(source: RSSSource): Promise<NewsItem[]> {
       const cleanSummary = truncate(stripHtml(rawSummary), 280);
 
       return {
-        id: `${source.id}-${i}-${item.guid || item.link || i}`,
+        id: `${source.id}-${item.guid ?? item.link ?? String(i)}`,
         title: item.title ?? "Untitled",
         summary: cleanSummary,
         url: item.link ?? "#",

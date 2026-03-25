@@ -2,12 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase/server";
+import type { Database } from "@/lib/supabase/types";
 import type { CalendarItem, Platform, ContentStatus, ContentType } from "@/lib/calendar-data";
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function rowToItem(row: any): CalendarItem {
+type CalendarItemRow = Database["public"]["Tables"]["calendar_items"]["Row"];
+
+function rowToItem(row: CalendarItemRow): CalendarItem {
   return {
     id: row.id,
     title: row.title,
@@ -87,16 +89,29 @@ export async function updateCalendarItem(
     title: string;
     platform: Platform;
     status: ContentStatus;
-    content_type: string;
+    contentType: ContentType;
     date: string;
     time: string | null;
   }>
 ): Promise<void> {
   const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  // Map camelCase public API → snake_case DB columns
+  const { contentType, ...rest } = updates;
+  const dbUpdates = {
+    ...rest,
+    ...(contentType !== undefined && { content_type: contentType }),
+  };
+
   const { error } = await supabase
     .from("calendar_items")
-    .update(updates)
-    .eq("id", id);
+    .update(dbUpdates)
+    .eq("id", id)
+    .eq("user_id", user.id);
 
   if (error) console.error("updateCalendarItem error:", error.message);
   revalidatePath("/calendar");
@@ -104,10 +119,16 @@ export async function updateCalendarItem(
 
 export async function deleteCalendarItem(id: string): Promise<void> {
   const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
   const { error } = await supabase
     .from("calendar_items")
     .delete()
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", user.id);
 
   if (error) console.error("deleteCalendarItem error:", error.message);
   revalidatePath("/calendar");

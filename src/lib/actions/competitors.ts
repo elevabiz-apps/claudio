@@ -2,17 +2,20 @@
 
 import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase/server";
+import type { Database } from "@/lib/supabase/types";
 import type { Competitor, SocialAccount } from "@/lib/competitor-data";
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function rowsToCompetitor(competitorRow: any, accountRows: any[]): Competitor {
+type CompetitorRow = Database["public"]["Tables"]["competitors"]["Row"];
+type CompetitorAccountRow = Database["public"]["Tables"]["competitor_accounts"]["Row"];
+
+function rowsToCompetitor(competitorRow: CompetitorRow, accountRows: CompetitorAccountRow[]): Competitor {
   return {
     id: competitorRow.id,
     name: competitorRow.name,
     notes: competitorRow.notes ?? "",
-    addedAt: (competitorRow.created_at as string).split("T")[0],
+    addedAt: competitorRow.created_at.split("T")[0],
     accounts: accountRows.map((a) => ({
       platform: a.platform,
       handle: a.handle,
@@ -140,10 +143,16 @@ export async function updateCompetitorNotes(
   notes: string
 ): Promise<void> {
   const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
   const { error } = await supabase
     .from("competitors")
     .update({ notes })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", user.id);
 
   if (error) console.error("updateCompetitorNotes error:", error.message);
   revalidatePath("/competitors");
@@ -160,6 +169,30 @@ export async function updateCompetitorAccount(
   }>
 ): Promise<void> {
   const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  // competitor_accounts rows are owned transitively through competitors (RLS enforces this),
+  // so we verify ownership by joining through the competitor.
+  const { data: account } = await supabase
+    .from("competitor_accounts")
+    .select("competitor_id")
+    .eq("id", accountId)
+    .single();
+
+  if (!account) return;
+
+  const { data: competitor } = await supabase
+    .from("competitors")
+    .select("id")
+    .eq("id", account.competitor_id)
+    .eq("user_id", user.id)
+    .single();
+
+  if (!competitor) return;
+
   const { error } = await supabase
     .from("competitor_accounts")
     .update(updates)
@@ -171,11 +204,17 @@ export async function updateCompetitorAccount(
 
 export async function deleteCompetitor(id: string): Promise<void> {
   const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
   // RLS + cascade will handle accounts deletion
   const { error } = await supabase
     .from("competitors")
     .delete()
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", user.id);
 
   if (error) console.error("deleteCompetitor error:", error.message);
   revalidatePath("/competitors");

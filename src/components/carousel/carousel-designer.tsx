@@ -36,6 +36,7 @@ import {
 import { saveCarouselDesign } from "@/lib/actions/carousel";
 import type { CarouselSlide, CarouselElement, CarouselDesign } from "@/lib/actions/carousel";
 import { AIGeneratePanel } from "@/components/carousel/ai-generate-panel";
+import { slideBackground } from "@/lib/carousel-utils";
 
 // ── Templates ──────────────────────────────────────────────────────────────
 
@@ -169,13 +170,6 @@ function makeSlide(templateId = "dark"): CarouselSlide {
   };
 }
 
-function slideBackground(slide: CarouselSlide): string {
-  if (slide.backgroundType === "gradient") {
-    return `linear-gradient(${slide.gradientDirection}, ${slide.gradientFrom}, ${slide.gradientTo})`;
-  }
-  return slide.backgroundColor;
-}
-
 // ── Main Component ─────────────────────────────────────────────────────────
 
 interface CarouselDesignerProps {
@@ -209,8 +203,7 @@ export function CarouselDesigner({ initialDesign }: CarouselDesignerProps) {
   // ── Slide CRUD ──────────────────────────────────────────────────────────
 
   function addSlide() {
-    const tpl = TEMPLATES.find((t) => t.id === "dark") ?? TEMPLATES[0]!;
-    // Copy template from active slide
+    // New slide inherits background style from the active slide
     const newSlide: CarouselSlide = {
       ...makeSlide(),
       backgroundType: activeSlide.backgroundType,
@@ -219,7 +212,6 @@ export function CarouselDesigner({ initialDesign }: CarouselDesignerProps) {
       gradientTo: activeSlide.gradientTo,
       gradientDirection: activeSlide.gradientDirection,
     };
-    void tpl;
     setSlides((prev) => {
       const next = [...prev];
       next.splice(activeSlideIndex + 1, 0, newSlide);
@@ -231,7 +223,7 @@ export function CarouselDesigner({ initialDesign }: CarouselDesignerProps) {
 
   function duplicateSlide() {
     const copy: CarouselSlide = {
-      ...JSON.parse(JSON.stringify(activeSlide)),
+      ...structuredClone(activeSlide),
       id: crypto.randomUUID(),
       elements: activeSlide.elements.map((e) => ({ ...e, id: crypto.randomUUID() })),
     };
@@ -294,7 +286,7 @@ export function CarouselDesigner({ initialDesign }: CarouselDesignerProps) {
     setSelectedElementId(el.id);
   }
 
-  function updateElement(id: string, updates: Partial<CarouselElement>) {
+  const updateElement = useCallback((id: string, updates: Partial<CarouselElement>) => {
     setSlides((prev) =>
       prev.map((s, i) =>
         i === activeSlideIndex
@@ -307,7 +299,7 @@ export function CarouselDesigner({ initialDesign }: CarouselDesignerProps) {
           : s
       )
     );
-  }
+  }, [activeSlideIndex]);
 
   function deleteElement(id: string) {
     setSlides((prev) =>
@@ -356,8 +348,7 @@ export function CarouselDesigner({ initialDesign }: CarouselDesignerProps) {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSlideIndex]);
+  }, [updateElement]);
 
   // ── Export ──────────────────────────────────────────────────────────────
 

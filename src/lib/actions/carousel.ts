@@ -105,10 +105,16 @@ export async function saveCarouselDesign(input: {
 
 export async function deleteCarouselDesign(id: string): Promise<void> {
   const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
   const { error } = await supabase
     .from("carousel_designs")
     .delete()
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", user.id);
 
   if (error) console.error("deleteCarouselDesign error:", error.message);
   revalidatePath("/carousel");

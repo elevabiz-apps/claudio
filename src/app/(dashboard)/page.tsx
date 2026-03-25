@@ -6,6 +6,7 @@ import {
   CalendarDays,
   Users,
   Newspaper,
+  LayoutDashboard,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -39,6 +40,12 @@ const sections = [
     description: "Aggregate and curate industry news",
     href: "/news",
     icon: Newspaper,
+  },
+  {
+    title: "Carousel Designer",
+    description: "Design multi-slide Instagram carousels with AI",
+    href: "/carousel",
+    icon: LayoutDashboard,
   },
 ];
 

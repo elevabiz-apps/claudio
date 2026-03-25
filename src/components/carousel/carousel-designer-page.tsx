@@ -8,16 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { CarouselDesigner } from "@/components/carousel/carousel-designer";
 import { deleteCarouselDesign } from "@/lib/actions/carousel";
 import type { CarouselDesign } from "@/lib/actions/carousel";
+import { slideBackground } from "@/lib/carousel-utils";
 
 interface CarouselDesignerPageProps {
   designs: CarouselDesign[];
-}
-
-function slideBackground(slide: CarouselDesign["slides"][0]): string {
-  if (slide.backgroundType === "gradient") {
-    return `linear-gradient(${slide.gradientDirection}, ${slide.gradientFrom}, ${slide.gradientTo})`;
-  }
-  return slide.backgroundColor;
 }
 
 export function CarouselDesignerPage({ designs: initialDesigns }: CarouselDesignerPageProps) {
